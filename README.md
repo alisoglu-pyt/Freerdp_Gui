@@ -1,7 +1,7 @@
 # Freerdp_Gui
 https://github.com/l0rdg3x/FreeRDP-GUI-Wrapper Yansısıdır. Burada Orjinal versiyonu vardır ilave olarak 
 Yeni eklenen Özellikler smartcard, floatbar , -gfx -rfx ve Renk derinliği eklendi.
-Bekir Alişoğlu
+
 
 FreeRDP GUI Wrapper
 
