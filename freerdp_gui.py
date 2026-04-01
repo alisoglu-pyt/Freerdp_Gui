@@ -1,0 +1,508 @@
+import json
+import os
+import pickle
+import subprocess
+import sys
+from pathlib import Path
+
+from cryptography.fernet import Fernet
+import tkinter as tk
+from tkinter import messagebox, ttk
+from ttkthemes import ThemedTk
+
+
+class FreeRDPGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("FreeRDP GUI Wrapper")
+        if getattr(sys, 'frozen', False):
+            icon_path = os.path.join(sys._MEIPASS, 'app_icon.png')
+        else:
+            icon_path = 'app_icon.png'
+        try:
+            self.root.iconphoto(False, tk.PhotoImage(file=icon_path))
+        except:
+            pass
+        self.root.geometry('1100x650')
+        self.root.resizable(False, False)
+
+        self.root.set_theme("arc")
+
+        self.config_dir = os.path.expanduser("~/.config/freerdp_gui")
+        self.config_file = os.path.join(self.config_dir, "config.key")
+
+        self.load_or_initialize_cipher_suite()
+
+        self.main_frame = ttk.Frame(root, padding="10")
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.left_column_frame = ttk.Frame(self.main_frame, padding="5")
+        self.left_column_frame.grid(row=0, column=0, sticky=tk.NS)
+
+        self.right_column_frame = ttk.Frame(self.main_frame, padding="5")
+        self.right_column_frame.grid(row=0, column=1, sticky=tk.NS)
+
+        server_frame = ttk.LabelFrame(self.left_column_frame, text="Server Information", padding="5")
+        server_frame.grid(row=0, column=0, sticky=tk.EW, pady=(0, 5))
+
+        ttk.Label(server_frame, text="Hostname/IP:").grid(row=0, column=0, padx=3, pady=3, sticky=tk.W)
+        self.hostname_entry = ttk.Entry(server_frame)
+        self.hostname_entry.grid(row=0, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        ttk.Label(server_frame, text="Username:").grid(row=1, column=0, padx=3, pady=3, sticky=tk.W)
+        self.username_entry = ttk.Entry(server_frame)
+        self.username_entry.grid(row=1, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        ttk.Label(server_frame, text="Password:").grid(row=2, column=0, padx=3, pady=3, sticky=tk.W)
+        self.password_entry = ttk.Entry(server_frame, show='*')
+        self.password_entry.grid(row=2, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        server_frame.grid_columnconfigure(1, weight=1)
+
+        checkbox_frame = ttk.Frame(self.left_column_frame)
+        checkbox_frame.grid(row=1, column=0, sticky=tk.EW, pady=(0, 5))
+
+        self.dynamic_res_var = tk.IntVar()
+        self.dynamic_res_chk = ttk.Checkbutton(checkbox_frame, text="Dynamic Resolution", variable=self.dynamic_res_var)
+        self.dynamic_res_chk.grid(row=0, column=0, padx=5, pady=3, sticky=tk.W)
+
+        self.cert_ignore_var = tk.IntVar()
+        self.cert_ignore_chk = ttk.Checkbutton(checkbox_frame, text="Ignore Certificate", variable=self.cert_ignore_var)
+        self.cert_ignore_chk.grid(row=0, column=1, padx=5, pady=3, sticky=tk.W)
+
+        self.clipboard_var = tk.IntVar()
+        self.clipboard_chk = ttk.Checkbutton(checkbox_frame, text="Enable Clipboard", variable=self.clipboard_var)
+        self.clipboard_chk.grid(row=1, column=0, padx=5, pady=3, sticky=tk.W)
+
+        self.res_checkbox_var = tk.IntVar()
+        self.resolution_checkbox = ttk.Checkbutton(checkbox_frame, text="Resolution (WxH):", variable=self.res_checkbox_var, command=self.toggle_res_entry)
+        self.resolution_checkbox.grid(row=1, column=1, padx=5, pady=3, sticky=tk.W)
+        self.resolution_entry = ttk.Entry(checkbox_frame, state=tk.DISABLED)
+        self.resolution_entry.grid(row=1, column=2, padx=3, pady=3, sticky=tk.EW)
+
+        self.fullscreen_var = tk.IntVar()
+        self.fullscreen_chk = ttk.Checkbutton(checkbox_frame, text="Full Screen", variable=self.fullscreen_var)
+        self.fullscreen_chk.grid(row=2, column=0, padx=5, pady=3, sticky=tk.W)
+
+        self.audio_var = tk.IntVar()
+        self.audio_chk = ttk.Checkbutton(checkbox_frame, text="Audio Redirection", variable=self.audio_var)
+        self.audio_chk.grid(row=2, column=1, padx=5, pady=3, sticky=tk.W)
+
+        self.drive_checkbox_var = tk.IntVar()
+        self.drive_checkbox = ttk.Checkbutton(checkbox_frame, text="Drive Path:", variable=self.drive_checkbox_var, command=self.toggle_drive_entry)
+        self.drive_checkbox.grid(row=3, column=0, padx=5, pady=3, sticky=tk.W)
+        self.drive_entry = ttk.Entry(checkbox_frame, state=tk.DISABLED)
+        self.drive_entry.grid(row=3, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        self.printer_var = tk.IntVar()
+        self.printer_chk = ttk.Checkbutton(checkbox_frame, text="Printer Redirection", variable=self.printer_var)
+        self.printer_chk.grid(row=4, column=0, padx=5, pady=3, sticky=tk.W)
+
+        self.multimon_var = tk.IntVar()
+        self.multimon_chk = ttk.Checkbutton(checkbox_frame, text="Multiple Monitors", variable=self.multimon_var)
+        self.multimon_chk.grid(row=4, column=1, padx=5, pady=3, sticky=tk.W)
+
+        self.smartcard_var = tk.IntVar()
+        self.smartcard_chk = ttk.Checkbutton(checkbox_frame, text="Smart Card:", variable=self.smartcard_var, command=self.toggle_smartcard_entry)
+        self.smartcard_chk.grid(row=5, column=0, padx=5, pady=3, sticky=tk.W)
+        self.smartcard_entry = ttk.Entry(checkbox_frame, state=tk.DISABLED)
+        self.smartcard_entry.grid(row=5, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        self.microphone_var = tk.IntVar()
+        self.microphone_chk = ttk.Checkbutton(checkbox_frame, text="Microphone Redirection", variable=self.microphone_var)
+        self.microphone_chk.grid(row=6, column=0, padx=5, pady=3, sticky=tk.W)
+
+        self.floatbar_var = tk.IntVar()
+        self.floatbar_chk = ttk.Checkbutton(checkbox_frame, text="Float Bar", variable=self.floatbar_var)
+        self.floatbar_chk.grid(row=6, column=1, padx=5, pady=3, sticky=tk.W)
+
+        ttk.Label(checkbox_frame, text="Color Depth:").grid(row=7, column=0, padx=5, pady=3, sticky=tk.W)
+        self.color_depth_combo = ttk.Combobox(checkbox_frame, values=["8", "15", "16", "24", "32"], state="readonly", width=5)
+        self.color_depth_combo.grid(row=7, column=1, padx=5, pady=3, sticky=tk.W)
+        self.color_depth_combo.set("32")
+
+        ttk.Label(checkbox_frame, text="GFX:").grid(row=8, column=0, padx=5, pady=3, sticky=tk.W)
+        self.gfx_combo = ttk.Combobox(checkbox_frame, values=["None", "RFX", "AVC420", "AVC444", "Progressive"], state="readonly", width=10)
+        self.gfx_combo.grid(row=8, column=1, padx=5, pady=3, sticky=tk.W)
+        self.gfx_combo.set("None")
+
+        self.rfx_var = tk.IntVar()
+        self.rfx_chk = ttk.Checkbutton(checkbox_frame, text="Enable RFX", variable=self.rfx_var, command=self.toggle_rfx_mode)
+        self.rfx_chk.grid(row=9, column=0, padx=5, pady=3, sticky=tk.W)
+
+        ttk.Label(checkbox_frame, text="RFX Mode:").grid(row=9, column=1, padx=5, pady=3, sticky=tk.W)
+        self.rfx_mode_combo = ttk.Combobox(checkbox_frame, values=["None", "Video", "Image"], state="readonly", width=8)
+        self.rfx_mode_combo.grid(row=9, column=2, padx=5, pady=3, sticky=tk.W)
+        self.rfx_mode_combo.set("None")
+        self.rfx_mode_combo.config(state=tk.DISABLED)
+
+        remoteapp_frame = ttk.LabelFrame(self.left_column_frame, text="RemoteApp", padding="5")
+        remoteapp_frame.grid(row=2, column=0, sticky=tk.EW, pady=(0, 5))
+
+        ttk.Label(remoteapp_frame, text="Program Path:").grid(row=0, column=0, padx=3, pady=3, sticky=tk.W)
+        self.remoteapp_program_entry = ttk.Entry(remoteapp_frame)
+        self.remoteapp_program_entry.grid(row=0, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        ttk.Label(remoteapp_frame, text="Working Directory:").grid(row=1, column=0, padx=3, pady=3, sticky=tk.W)
+        self.remoteapp_workdir_entry = ttk.Entry(remoteapp_frame)
+        self.remoteapp_workdir_entry.grid(row=1, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        remoteapp_frame.grid_columnconfigure(1, weight=1)
+
+        rdg_frame = ttk.LabelFrame(self.right_column_frame, text="Remote Desktop Gateway", padding="5")
+        rdg_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 5))
+
+        self.rdg_enable_var = tk.IntVar()
+        self.rdg_enable_chk = ttk.Checkbutton(rdg_frame, text="Use RD Gateway", variable=self.rdg_enable_var, command=self.toggle_rdg)
+        self.rdg_enable_chk.grid(row=0, column=0, sticky=tk.W, padx=3, pady=3)
+
+        ttk.Label(rdg_frame, text="Server:").grid(row=1, column=0, padx=3, pady=3, sticky=tk.W)
+        self.rdg_server_entry = ttk.Entry(rdg_frame, state=tk.DISABLED)
+        self.rdg_server_entry.grid(row=1, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        ttk.Label(rdg_frame, text="User:").grid(row=2, column=0, padx=3, pady=3, sticky=tk.W)
+        self.rdg_user_entry = ttk.Entry(rdg_frame, state=tk.DISABLED)
+        self.rdg_user_entry.grid(row=2, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        ttk.Label(rdg_frame, text="Password:").grid(row=3, column=0, padx=3, pady=3, sticky=tk.W)
+        self.rdg_password_entry = ttk.Entry(rdg_frame, show='*', state=tk.DISABLED)
+        self.rdg_password_entry.grid(row=3, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        rdg_frame.grid_columnconfigure(1, weight=1)
+
+        self.connect_btn = ttk.Button(self.right_column_frame, text="Connect", command=self.connect)
+        self.connect_btn.grid(row=4, column=0, pady=10)
+
+        config_frame = ttk.LabelFrame(self.right_column_frame, text="Configurations", padding="5")
+        config_frame.grid(row=1, column=0, sticky=tk.EW, pady=(0, 5))
+
+        ttk.Label(config_frame, text="Config Name:").grid(row=0, column=0, padx=3, pady=3, sticky=tk.W)
+        self.config_name_entry = ttk.Entry(config_frame)
+        self.config_name_entry.grid(row=0, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        self.load_config_btn = ttk.Button(config_frame, text="Load Config", command=self.load_config)
+        self.load_config_btn.grid(row=0, column=2, padx=3, pady=3)
+
+        self.save_config_btn = ttk.Button(config_frame, text="Save Config", command=self.export_config)
+        self.save_config_btn.grid(row=0, column=3, padx=3, pady=3)
+
+        ttk.Label(config_frame, text="Select Config:").grid(row=1, column=0, padx=3, pady=3, sticky=tk.W)
+        self.config_dropdown = ttk.Combobox(config_frame, values=self.get_available_configs())
+        self.config_dropdown.grid(row=1, column=1, padx=3, pady=3, sticky=tk.EW)
+
+        self.delete_config_btn = ttk.Button(config_frame, text="Delete Config", command=self.delete_config)
+        self.delete_config_btn.grid(row=1, column=2, padx=3, pady=3)
+
+        config_frame.grid_columnconfigure(1, weight=1)
+
+    def load_or_initialize_cipher_suite(self):
+        if os.path.exists(self.config_file):
+            with open(self.config_file, "rb") as f:
+                self.cipher_suite = pickle.load(f)
+        else:
+            self.initialize_cipher_suite()
+            self.save_cipher_suite()
+
+    def initialize_cipher_suite(self):
+        self.key = Fernet.generate_key()
+        self.cipher_suite = Fernet(self.key)
+
+    def save_cipher_suite(self):
+        os.makedirs(self.config_dir, exist_ok=True)
+
+        with open(self.config_file, "wb") as f:
+            pickle.dump(self.cipher_suite, f)
+
+    def toggle_res_entry(self):
+        state = tk.NORMAL if self.res_checkbox_var.get() else tk.DISABLED
+        self.resolution_entry.config(state=state)
+
+    def toggle_drive_entry(self):
+        state = tk.NORMAL if self.drive_checkbox_var.get() else tk.DISABLED
+        self.drive_entry.config(state=state)
+
+    def toggle_rdg(self):
+        if self.rdg_enable_var.get():
+            self.rdg_server_entry.config(state=tk.NORMAL)
+            self.rdg_user_entry.config(state=tk.NORMAL)
+            self.rdg_password_entry.config(state=tk.NORMAL)
+        else:
+            self.rdg_server_entry.config(state=tk.DISABLED)
+            self.rdg_user_entry.config(state=tk.DISABLED)
+            self.rdg_password_entry.config(state=tk.DISABLED)
+
+    def toggle_smartcard_entry(self):
+        state = tk.NORMAL if self.smartcard_var.get() else tk.DISABLED
+        self.smartcard_entry.config(state=state)
+
+    def toggle_rfx_mode(self):
+        state = tk.NORMAL if self.rfx_var.get() else tk.DISABLED
+        self.rfx_mode_combo.config(state=state)
+
+    def encrypt(self, message: str) -> str:
+        return self.cipher_suite.encrypt(message.encode()).decode()
+
+    def decrypt(self, encrypted_message: str) -> str:
+        return self.cipher_suite.decrypt(encrypted_message.encode()).decode()
+
+    def get_config_path(self, config_name):
+        return Path(f"~/.config/freerdp_gui/{config_name}.json").expanduser()
+
+    def get_available_configs(self):
+        config_dir = Path("~/.config/freerdp_gui").expanduser()
+        return [f.stem for f in config_dir.glob("*.json")]
+
+    def export_config(self):
+        config_name = self.config_name_entry.get()
+        if not config_name:
+            messagebox.showwarning("Warning", "Please specify a config name!")
+            return
+
+        config_path = self.get_config_path(config_name)
+        config_path = Path("~/.config/freerdp_gui").expanduser()
+        config_path.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "hostname": self.hostname_entry.get(),
+            "username": self.username_entry.get(),
+            "password": self.encrypt(self.password_entry.get()),
+            "dynamic_resolution": self.dynamic_res_var.get(),
+            "ignore_certificate": self.cert_ignore_var.get(),
+            "enable_clipboard": self.clipboard_var.get(),
+            "resolution": self.resolution_entry.get() if self.res_checkbox_var.get() else "",
+            "full_screen": self.fullscreen_var.get(),
+            "audio_redirection": self.audio_var.get(),
+            "drive_path": self.drive_entry.get() if self.drive_checkbox_var.get() else "",
+            "printer_redirection": self.printer_var.get(),
+            "multiple_monitors": self.multimon_var.get(),
+            "smartcard": self.smartcard_var.get(),
+            "smartcard_reader": self.smartcard_entry.get() if self.smartcard_var.get() else "",
+            "microphone_redirection": self.microphone_var.get(),
+            "floatbar": self.floatbar_var.get(),
+            "color_depth": self.color_depth_combo.get(),
+            "gfx": self.gfx_combo.get(),
+            "rfx": self.rfx_var.get(),
+            "rfx_mode": self.rfx_mode_combo.get(),
+            "remoteapp_program": self.remoteapp_program_entry.get(),
+            "remoteapp_workdir": self.remoteapp_workdir_entry.get(),
+            "use_rdg": self.rdg_enable_var.get(),
+            "rdg_server": self.rdg_server_entry.get(),
+            "rdg_user": self.rdg_user_entry.get(),
+            "rdg_password": self.encrypt(self.rdg_password_entry.get())
+        }
+
+        config_filename = f"{config_name}.json"
+        with open(config_path / config_filename, 'w') as file:
+            json.dump(data, file)
+
+        self.config_dropdown['values'] = self.get_available_configs()
+
+    def clear_all_fields(self):
+        entries_to_clear = [
+            self.hostname_entry,
+            self.username_entry,
+            self.password_entry,
+            self.resolution_entry,
+            self.drive_entry,
+            self.smartcard_entry,
+            self.remoteapp_program_entry,
+            self.remoteapp_workdir_entry,
+            self.rdg_server_entry,
+            self.rdg_user_entry,
+            self.rdg_password_entry
+        ]
+
+        for entry in entries_to_clear:
+            entry.delete(0, 'end')
+
+        checkboxes_to_clear = [
+            self.dynamic_res_var,
+            self.cert_ignore_var,
+            self.clipboard_var,
+            self.res_checkbox_var,
+            self.fullscreen_var,
+            self.audio_var,
+            self.drive_checkbox_var,
+            self.printer_var,
+            self.multimon_var,
+            self.smartcard_var,
+            self.microphone_var,
+            self.floatbar_var,
+            self.rdg_enable_var
+        ]
+
+        for checkbox in checkboxes_to_clear:
+            checkbox.set(0)
+
+        self.color_depth_combo.set("32")
+        self.gfx_combo.set("None")
+        self.rfx_mode_combo.set("None")
+        self.rfx_mode_combo.config(state=tk.DISABLED)
+
+    def load_config(self):
+        self.clear_all_fields()
+        config_name = self.config_dropdown.get()
+        if not config_name:
+            messagebox.showwarning("Warning", "Please select a config to load!")
+            return
+
+        config_path = self.get_config_path(config_name)
+
+        if config_path.exists():
+            with open(config_path, 'r') as file:
+                data = json.load(file)
+                self.hostname_entry.insert(0, data.get("hostname", ""))
+                self.username_entry.insert(0, data.get("username", ""))
+                decrypted_password = self.decrypt(data.get("password", ""))
+                self.password_entry.insert(0, decrypted_password)
+
+                self.dynamic_res_var.set(data.get("dynamic_resolution", 0))
+                self.cert_ignore_var.set(data.get("ignore_certificate", 0))
+                self.clipboard_var.set(data.get("enable_clipboard", 0))
+
+                res = data.get("resolution", "")
+                if res:
+                    self.res_checkbox_var.set(1)
+                    self.toggle_res_entry()
+                    self.resolution_entry.insert(0, res)
+
+                self.fullscreen_var.set(data.get("full_screen", 0))
+                self.audio_var.set(data.get("audio_redirection", 0))
+
+                drive_path = data.get("drive_path", "")
+                if drive_path:
+                    self.drive_checkbox_var.set(1)
+                    self.toggle_drive_entry()
+                    self.drive_entry.insert(0, drive_path)
+
+                self.printer_var.set(data.get("printer_redirection", 0))
+                self.multimon_var.set(data.get("multiple_monitors", 0))
+
+                self.smartcard_var.set(data.get("smartcard", 0))
+                smartcard_reader = data.get("smartcard_reader", "")
+                if smartcard_reader:
+                    self.smartcard_var.set(1)
+                    self.toggle_smartcard_entry()
+                    self.smartcard_entry.insert(0, smartcard_reader)
+
+                self.microphone_var.set(data.get("microphone_redirection", 0))
+
+                self.floatbar_var.set(data.get("floatbar", 0))
+
+                self.color_depth_combo.set(data.get("color_depth", "32"))
+
+                self.gfx_combo.set(data.get("gfx", "None"))
+
+                self.rfx_var.set(data.get("rfx", 0))
+                self.toggle_rfx_mode()
+                self.rfx_mode_combo.set(data.get("rfx_mode", "None"))
+
+                self.remoteapp_program_entry.insert(0, data.get("remoteapp_program", ""))
+                self.remoteapp_workdir_entry.insert(0, data.get("remoteapp_workdir", ""))
+
+                self.rdg_enable_var.set(data.get("use_rdg", 0))
+                self.toggle_rdg()
+                self.rdg_server_entry.insert(0, data.get("rdg_server", ""))
+                self.rdg_user_entry.insert(0, data.get("rdg_user", ""))
+                decrypted_rdg_password = self.decrypt(data.get("rdg_password", ""))
+                self.rdg_password_entry.insert(0, decrypted_rdg_password)
+        else:
+            messagebox.showwarning("Warning", "Configuration file not found!")
+
+    def delete_config(self):
+        config_name = self.config_dropdown.get()
+        if not config_name:
+            messagebox.showwarning("Warning", "Please select a config to delete!")
+            return
+
+        config_path = self.get_config_path(config_name)
+        if config_path.exists():
+            config_path.unlink()
+            self.config_dropdown['values'] = self.get_available_configs()
+            self.config_dropdown.set('')
+            messagebox.showinfo("Info", "Config deleted successfully!")
+        else:
+            messagebox.showwarning("Warning", "Config not found!")
+
+    def connect(self):
+        cmd = ["xfreerdp3"]
+        cmd.extend([f"/v:{self.hostname_entry.get()}"])
+        cmd.extend([f"/u:{self.username_entry.get()}"])
+        cmd.extend([f"/p:{self.password_entry.get()}"])
+
+        if self.dynamic_res_var.get():
+            cmd.append("/dynamic-resolution")
+
+        if self.cert_ignore_var.get():
+            cmd.append("/cert-ignore")
+
+        if self.clipboard_var.get():
+            cmd.append("/clipboard")
+
+        if self.res_checkbox_var.get() and self.resolution_entry.get():
+            cmd.extend([f"/size:{self.resolution_entry.get()}"])
+
+        if self.fullscreen_var.get():
+            cmd.append("/f")
+
+        if self.audio_var.get():
+            cmd.append("/sound")
+
+        if self.drive_checkbox_var.get() and self.drive_entry.get():
+            cmd.extend([f"/drive:my_drive,{self.drive_entry.get()}"])
+
+        if self.printer_var.get():
+            cmd.append("/printer")
+
+        if self.multimon_var.get():
+            cmd.append("/multimon")
+
+        if self.smartcard_var.get():
+            if self.smartcard_entry.get():
+                cmd.append(f"/smartcard:{self.smartcard_entry.get()}")
+            else:
+                cmd.append("/smartcard")
+
+        if self.microphone_var.get():
+            cmd.append("/microphone")
+
+        if self.floatbar_var.get():
+            cmd.append("/floatbar")
+
+        color_depth = self.color_depth_combo.get()
+        if color_depth:
+            cmd.append(f"/bpp:{color_depth}")
+
+        gfx = self.gfx_combo.get()
+        if gfx and gfx != "None":
+            cmd.append(f"/gfx:{gfx}")
+
+        if self.rfx_var.get():
+            cmd.append("/rfx")
+            rfx_mode = self.rfx_mode_combo.get()
+            if rfx_mode and rfx_mode != "None":
+                cmd.append(f"/rfx-mode:{rfx_mode.lower()}")
+
+        if self.rdg_enable_var.get():
+            cmd.extend([f"/g:{self.rdg_server_entry.get()}"])
+            cmd.extend([f"/gu:{self.rdg_user_entry.get()}"])
+            cmd.extend([f"/gp:{self.rdg_password_entry.get()}"])
+
+        remoteapp_program = self.remoteapp_program_entry.get().strip()
+        if remoteapp_program:
+            cmd.append(f"/app:{remoteapp_program}")
+
+            remoteapp_workdir = self.remoteapp_workdir_entry.get().strip()
+            if remoteapp_workdir:
+                cmd.append(f"/app-working-dir:{remoteapp_workdir}")
+
+        try:
+            subprocess.run(cmd)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to run FreeRDP: {e}")
+
+
+if __name__ == "__main__":
+    root = ThemedTk(theme="arc")
+    gui = FreeRDPGUI(root)
+    root.mainloop()
