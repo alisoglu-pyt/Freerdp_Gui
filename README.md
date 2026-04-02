@@ -1,8 +1,4 @@
 # Freerdp_Gui
-https://github.com/l0rdg3x/FreeRDP-GUI-Wrapper Yansısıdır. Burada Orjinal versiyonu vardır ilave olarak 
-Yeni eklenen Özellikler smartcard, floatbar , -gfx -rfx ve Renk derinliği eklendi.
-
-
 FreeRDP GUI Wrapper
 
 RDP bağlantılarını kolayca yönetmek ve kurmak için geliştirilmiş, FreeRDP tabanlı basit bir grafik arayüz (GUI) uygulamasıdır. (Uzak Masaüstü Ağ Geçidi - RD Gateway desteği mevcuttur). 
@@ -48,3 +44,7 @@ Uygulamanın çalışması için aşağıdaki kütüphanelerin yüklü olması g
     cryptography
 
     FreeRDP (Sistemde kurulu olmalıdır)
+    
+https://github.com/l0rdg3x/FreeRDP-GUI-Wrapper Yansısıdır. Burada Orjinal versiyonu vardır ilave olarak 
+Yeni eklenen Özellikler smartcard, floatbar , -gfx -rfx ve Renk derinliği eklendi.
+
